@@ -1,0 +1,120 @@
+---
+title: "EPLSoccer"
+author: "Brandon Croarkin"
+date: "August 15, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## EPL Soccer Analysis
+
+```{r}
+library(RSQLite)
+library(dplyr)
+```
+
+##Read in Data
+
+```{r}
+con = dbConnect(drv=RSQLite::SQLite(), dbname="database.sqlite")
+```
+
+```{r}
+dbListTables(con)
+```
+
+```{r}
+Country <- dbGetQuery(con, 'select * from Country')
+Match <- dbGetQuery(con, 'select * from Match')
+League <- dbGetQuery(con, 'select * from League')
+Player <- dbGetQuery(con, 'select * from Player')
+Player_Attributes <- dbGetQuery(con, 'select * from Player_Attributes')
+Team <- dbGetQuery(con, 'select * from Team')
+Team_Attributes <- dbGetQuery(con, 'select * from Team_Attributes')
+sqlite_sequence <- dbGetQuery(con, 'select * from sqlite_sequence')
+```
+
+```{r}
+summary(Match)
+```
+
+```{r}
+Country
+```
+
+```{r}
+Match %>% filter(country_id == 1729) %>% top_n(20)
+```
+
+```{r}
+League
+```
+
+###Data PreProcessing
+
+```{r}
+#merge with Country table to get country name
+Matches2 <- merge(x = Country, y = Match, by.x = "id", by.y = "country_id")
+#merge with League table to get league name
+Matches2 <- merge(x = League, y = Matches2, by.x = "id", by.y = "league_id")
+#filter team table to just id and long team name
+Team2 <- Team %>% select(team_api_id, team_long_name)
+#merge with Team2 table to get home team name
+Matches2 <- merge(x = Team2, y = Matches2, by.x = "team_api_id", by.y = "home_team_api_id")
+Matches2 <- Matches2 %>% rename(Home_Team = team_long_name)
+#merge with Team2 table to get away team name
+Matches2 <- merge(x = Team2, y = Matches2, by.x = "team_api_id", by.y = "away_team_api_id")
+#drop unneeded id columns
+Matches2 <- Matches2[-c(1,3,5,6,8,10)]
+#rename columns
+Matches2 <- Matches2 %>% rename(Away_Team = team_long_name, League = name.x, Country = name.y)
+
+head(Matches2)
+```
+
+```{r}
+Matches3 <- Matches2 %>% filter(name.x == "England Premier League")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
