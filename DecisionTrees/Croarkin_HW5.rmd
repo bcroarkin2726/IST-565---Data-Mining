@@ -1,0 +1,374 @@
+---
+title: "DecisionTreeHW"
+author: "Brandon Croarkin"
+date: "August 18, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Decision Trees
+
+## HW 5: Use Clustering to Solve a Mystery in History
+
+In this homework assignment, you are going to use clustering methods to solve a mystery in history: who wrote the disputed essays, Hamilton or Madison?
+
+###Read in Data and Basic EDA
+
+```{r}
+library(ggplot2)
+library(ggfortify)
+library(dplyr)
+library(caTools)
+library(caret)
+library(rpart.plot)
+library(C50)
+library(gmodels)
+```
+
+```{r}
+fedPapers <- read.csv('fedPapers85.csv')
+#remove filename as it is not needed
+fedPapers <- fedPapers[-2]
+head(fedPapers)
+```
+
+```{r}
+str(fedPapers)
+```
+
+```{r}
+summary(fedPapers)
+```
+
+```{r}
+table(fedPapers$author)
+```
+
+###Data Preparation
+
+```{r}
+#check for missing values
+anyNA(fedPapers)
+```
+
+```{r}
+set.seed(11)
+
+#create a dataframe with just the papers from Hamilton, Madison, HM, and Jay as the training set
+fedPapers_train <- fedPapers %>% dplyr::filter(author == "Hamilton" | author == "Madison" | author == "HM" | author == "Jay")
+#re-factor
+fedPapers_train$author <- factor(fedPapers_train$author)
+
+#split this further into a training and test to find make sure the model works well on the training data without overfitting
+sample <- sample.split(fedPapers_train,SplitRatio = .7)
+train <- subset(fedPapers_train, sample == TRUE)
+test <- subset(fedPapers_train, sample == FALSE)
+
+#create a dataframe with just the papers from Hamilton and Madison as a second training set
+fedPapersHM <- fedPapers %>% dplyr::filter(author == "Hamilton" | author == "Madison")
+#re-factor
+fedPapersHM$author <- factor(fedPapersHM$author)
+
+#split into training and test
+sample2 <- sample.split(fedPapersHM,SplitRatio = .7)
+HMtrain <- subset(fedPapersHM, sample2 == TRUE)
+HMtest <- subset(fedPapersHM, sample2 == FALSE)
+#last row of HMtrain is missing so need to drop it
+HMtrain <- head(HMtrain, -1)
+#last 4 rows of HMtest are missing so need to drop
+HMtest <- head(HMtest, -4)
+
+#create a dataframe with just the disputed papers as the test set
+fedPapers_test <- fedPapers %>% dplyr::filter(author == "dispt")
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(fedPapers_test)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(fedPapers_train)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(fedPapersHM)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(fedPapers_test)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(HMtest)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(HMtrain)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(test)
+```
+
+```{r}
+#check for missing values on newly created datasets
+anyNA(train)
+```
+
+###Analysis - Creating the Models
+
+####C5.0 Algorithm - Full Dataset
+
+#####Model 1 - no parameters set
+
+```{r}
+#run C5 model without any parameters set
+m1 <- C5.0(train[-1], train$author)
+m1
+```
+
+```{r}
+summary(m1)
+```
+
+```{r}
+m1_pred <- predict(m1, test)
+CrossTable(test$author, m1_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 3 incorrect out of 22 for a 13.6% error rate. 
+
+#####Model 2 - add adaptive boosting
+```{r}
+m2 <- C5.0(train[-1], train$author, trials = 10)
+m2
+```
+
+```{r}
+summary(m2)
+```
+
+```{r}
+m2_pred <- predict(m2, test)
+CrossTable(test$author, m2_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 3 incorrect out of 22 for a 13.6% error rate. 
+
+###CART - Full Dataset
+
+#####Model 3 - CART with repeated cross-validation
+
+```{r}
+#use repeated cross validation
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(11)
+m3 <- train(author ~ ., data = train, method = "rpart",
+                   parms = list(split = "information"),
+                   trControl=trctrl,
+                   tuneLength = 10)
+```
+
+```{r}
+m3
+```
+
+```{r}
+prp(m3$finalModel, box.palette = "Blues", tweak = 1.2)
+```
+
+```{r}
+m3_pred <- predict(m3, test)
+CrossTable(test$author, m3_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 2 incorrect out of 22 for a 9.1% error rate. 
+
+```{r}
+confusionMatrix(m3_pred, test$author)
+```
+
+#####Model 4 - CART with bootstrapping validation
+```{r}
+#use repeated cross validation
+trctrl <- trainControl(method = "boot", number = 10)
+set.seed(11)
+m4 <- train(author ~ ., data = train, method = "rpart",
+                   parms = list(split = "information"),
+                   trControl=trctrl,
+                   tuneLength = 10)
+```
+
+```{r}
+m4
+```
+
+```{r}
+prp(m4$finalModel, box.palette = "Blues", tweak = 1.2)
+```
+
+```{r}
+m4_pred <- predict(m4, test)
+CrossTable(test$author, m4_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 2 incorrect out of 22 for a 9.1% error rate. 
+
+```{r}
+confusionMatrix(m4_pred, test$author)
+```
+
+####C5.0 Algorithm - HM Dataset
+
+#####Model 5 - no parameters set
+
+```{r}
+#run C5 model without any parameters set
+m5 <- C5.0(HMtrain[-1], HMtrain$author)
+m5
+```
+
+```{r}
+summary(m5)
+```
+
+```{r}
+m5_pred <- predict(m5, HMtest)
+CrossTable(HMtest$author, m5_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There was 0 incorrect out of 18 for a 0.0% error rate. 
+
+#####Model 6 - add adaptive boosting
+```{r}
+m6 <- C5.0(HMtrain[-1], HMtrain$author, trials = 10)
+m6
+```
+
+```{r}
+summary(m6)
+```
+
+```{r}
+m6_pred <- predict(m6, HMtest)
+CrossTable(HMtest$author, m6_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 0 incorrect out of 18 for a 0.0% error rate. 
+
+###CART - HM Dataset
+
+#####Model 7 - CART with repeated cross-validation
+
+```{r}
+#use repeated cross validation
+trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(11)
+m7 <- train(author ~ ., data = HMtrain, method = "rpart",
+                   parms = list(split = "information"),
+                   trControl=trctrl,
+                   tuneLength = 10)
+```
+
+```{r}
+m7
+```
+
+```{r}
+prp(m7$finalModel, box.palette = "Blues", tweak = 1.2)
+```
+
+```{r}
+m7_pred <- predict(m7, HMtest)
+CrossTable(HMtest$author, m7_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+```
+There were 0 incorrect out of 18 for a 0.0% error rate.
+
+#####Model 8 - CART with bootstrapping validation
+```{r}
+#use repeated cross validation
+trctrl <- trainControl(method = "boot", number = 10, repeats = 3)
+set.seed(11)
+m8 <- train(author ~ ., data = HMtrain, method = "rpart",
+                   parms = list(split = "information"),
+                   trControl=trctrl,
+                   tuneLength = 10)
+```
+
+```{r}
+m8
+```
+
+```{r}
+prp(m8$finalModel, box.palette = "Blues", tweak = 1.2)
+```
+
+```{r}
+m8_pred <- predict(m8, HMtest)
+CrossTable(HMtest$author, m8_pred, prop.chisq = FALSE, prop.c = FALSE, prop.r = FALSE, dnn = c('actual author', 'predicted author'))
+
+```
+There were 3 incorrect out of 22 for a 13.6% error rate. 
+
+```{r}
+confusionMatrix(m8_pred, HMtest$author)
+```
+
+###Analysis - Testing the Models on the Disputed Papers
+
+```{r}
+m1_disputed_pred <- predict(m1, fedPapers_test)
+m2_disputed_pred <- predict(m2, fedPapers_test)
+m3_disputed_pred <- predict(m3, fedPapers_test)
+m4_disputed_pred <- predict(m4, fedPapers_test)
+m5_disputed_pred <- predict(m5, fedPapers_test)
+m6_disputed_pred <- predict(m6, fedPapers_test)
+m7_disputed_pred <- predict(m7, fedPapers_test)
+m8_disputed_pred <- predict(m8, fedPapers_test)
+```
+
+```{r}
+disputed_predictions <- data.frame(m1_disputed_pred, m2_disputed_pred, m3_disputed_pred, m4_disputed_pred, m5_disputed_pred, m6_disputed_pred, m7_disputed_pred, m8_disputed_pred)
+str(disputed_predictions)
+```
+
+```{r}
+disputed_predictions <- data.frame(m1_disputed_pred, m2_disputed_pred, m3_disputed_pred, m4_disputed_pred, m5_disputed_pred, m6_disputed_pred, m7_disputed_pred, m8_disputed_pred)
+summary(disputed_predictions)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
