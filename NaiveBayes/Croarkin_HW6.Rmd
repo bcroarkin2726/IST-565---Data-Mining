@@ -1,0 +1,324 @@
+---
+title: "HW6_NaiveBayes&DecisionTrees"
+author: "Brandon Croarkin"
+date: "September 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HW 6 - Naïve Bayes and decision tree for handwriting recognition
+
+```{r}
+library(e1071)
+library(caTools)
+library(gmodels)
+library(C50)
+library(mlr)
+library(klaR)
+library(caret)
+set.seed(11)
+```
+
+###Read in Data and Basic EDA
+
+```{r}
+train <- read.csv('train.csv')
+test <- read.csv('test.csv')
+```
+
+```{r}
+head(train[1:5])
+```
+
+```{r}
+nrow(train)
+```
+
+###Data Preprocessing
+
+```{r}
+#need to convert label to a factor
+train$label <- factor(train$label)
+str(train[,1:4])
+```
+
+```{r}
+full_train_labels <- train[,1]
+```
+
+```{r}
+#make subset of data to make algorithms more reasonable
+train_subset <- train[sample(nrow(train), 4000),]
+head(train_subset[1:10])
+```
+
+```{r}
+table(train_subset$label)
+```
+
+```{r}
+#get a summary of a random pixel in middle of picture
+summary(train_subset$pixel537)
+```
+
+```{r}
+###convert the pixel values to a 0-1 scale
+train_subset <- cbind(train_subset[1],train_subset[,2:ncol(train_subset)]/255.00)
+#get a summary of a random pixel in middle of picture
+summary(train_subset$pixel537)
+```
+
+```{r}
+#make a training and test set from the subset to test model
+sample <- sample.split(train_subset, SplitRatio = 0.9)
+sub_train <- subset(train_subset, sample == TRUE)
+sub_test <- subset(train_subset, sample == FALSE)
+```
+
+```{r}
+#extract the labels for testing
+train_labels <- train_subset[,1]
+sub_test_labels <- sub_test[,1]
+sub_train_labels <- sub_train[,1]
+#make datasets without the labels
+train_subset_nolab <- train_subset[,2:ncol(train_subset)]
+sub_train_nolab <- sub_train[,2:ncol(sub_train)]
+sub_test_nolab <- sub_test[,2:ncol(sub_test)]
+```
+
+```{r}
+#test for missing data
+any(is.na(sub_test))
+```
+
+```{r}
+#test for missing data
+any(is.na(sub_train))
+```
+
+```{r}
+#test for missing data
+any(is.na(train))
+```
+
+```{r}
+str(sub_train)
+```
+
+```{r}
+#make a function to find percent correct from a confusion matrix
+findAccuracy <- function(x) {
+  correct <- sum(diag(x))
+  total <- sum(x)
+  perc_correct <- round(correct/total,4)
+  return(perc_correct * 100)
+}
+```
+
+###Naive Bayes
+
+```{r}
+#create a model with default parameters
+m1 <- naiveBayes(label ~ ., data = sub_train)
+m1_test_pred <- predict(m1, sub_test)
+(conf_matrix <- table(m1_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+summary(m1)
+```
+
+```{r}
+#create a model with laplace set to TRUE
+m2 <- naiveBayes(label ~ ., data = sub_train, na.ation = na.pass, laplace = 1)
+m2_test_pred <- predict(m2, sub_test)
+(conf_matrix <- table(m2_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#naive bayes with the help of the caret and klaR
+m3 <- train(sub_train_nolab, sub_train_labels, 'nb', trControl = trainControl(method = 'cv', number = 3))
+summary(m3)
+```
+
+```{r}
+m3_test_pred <- predict(m3, sub_test)
+(conf_matrix <- table(m3_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#make a function to discretize a column
+discretize_data <- function(x) {
+  x <- cut(x, breaks = c(-Inf,0.3,Inf), labels = c("Dark", "Light"))
+}
+#apply function to all columns of sub_test and sub_train
+train_subset_d <- as.data.frame(lapply(train_subset[,2:ncol(train_subset)], discretize_data))
+sub_test_d <- as.data.frame(lapply(sub_test[,2:ncol(sub_test)], discretize_data))
+sub_train_d <- as.data.frame(lapply(sub_train[,2:ncol(sub_train)], discretize_data))
+```
+
+```{r}
+#create a model with laplace set to TRUE and discretized data
+m4 <- naiveBayes(sub_train_labels ~ ., data = cbind(sub_train_d, sub_train_labels), na.ation = na.pass, laplace = 1)
+m4_test_pred <- predict(m4, sub_test_d)
+(conf_matrix <- table(m4_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#make a function to discretize a column
+discretize_data <- function(x) {
+  x <- cut(x, breaks = c(-Inf,0.3,0.6,Inf), labels = c("Dark","Medium", "Light"))
+}
+#apply function to all columns of sub_test and sub_train
+train_subset_d <- as.data.frame(lapply(train_subset[,2:ncol(train_subset)], discretize_data))
+sub_test_d <- as.data.frame(lapply(sub_test[,2:ncol(sub_test)], discretize_data))
+sub_train_d <- as.data.frame(lapply(sub_train[,2:ncol(sub_train)], discretize_data))
+```
+
+```{r}
+#create a model with laplace set to TRUE and discretized data
+m5 <- naiveBayes(sub_train_labels ~ ., data = cbind(sub_train_d, sub_train_labels), na.ation = na.pass, laplace = 1)
+m5_test_pred <- predict(m5, sub_test_d)
+(conf_matrix <- table(m5_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+###Decision Tree
+
+```{r}
+## Unlike Naive Bayes, Decision Trees will run best if I discretize the data.
+#make a function to discretize a column
+discretize_data <- function(x) {
+  x <- cut(x, breaks = c(-Inf,0.3,Inf), labels = c("Dark", "Light"))
+}
+#apply function to all columns of sub_test and sub_train
+train_subset_d <- as.data.frame(lapply(train_subset[,2:ncol(train_subset)], discretize_data))
+sub_test_d <- as.data.frame(lapply(sub_test[,2:ncol(sub_test)], discretize_data))
+sub_train_d <- as.data.frame(lapply(sub_train[,2:ncol(sub_train)], discretize_data))
+```
+
+```{r}
+summary(sub_train_d[,21:40])
+```
+
+```{r}
+#create a model with default parameters on categorical dataset
+dt_m1 <- C5.0(x = sub_train_d, y = sub_train_labels)
+dt_m1_test_pred <- predict(dt_m1, sub_test_d, type = "class")
+(conf_matrix <- table(dt_m1_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#create a model with default parameters on numeric dataset
+dt_m2 <- C5.0(sub_train_nolab, sub_train_labels)
+dt_m2_test_pred <- predict(dt_m2, sub_test_nolab, class = "type")
+(conf_matrix <- table(dt_m2_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#make a function to discretize a column
+discretize_data <- function(x) {
+  x <- cut(x, breaks = c(-Inf,0.3,0.6,Inf), labels = c("Dark","Medium", "Light"))
+}
+#apply function to all columns of sub_test and sub_train
+train_subset_d <- as.data.frame(lapply(train_subset[,2:ncol(train_subset)], discretize_data))
+sub_test_d <- as.data.frame(lapply(sub_test[,2:ncol(sub_test)], discretize_data))
+sub_train_d <- as.data.frame(lapply(sub_train[,2:ncol(sub_train)], discretize_data))
+```
+
+```{r}
+#create a model with default parameters on categorical dataset
+dt_m3 <- C5.0(sub_train_d, sub_train_labels)
+dt_m3_test_pred <- predict(dt_m3, sub_test_d)
+(conf_matrix <- table(dt_m3_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#create a model with boosting on categorical dataset
+dt_m4 <- C5.0(sub_train_d, sub_train_labels, trials = 3)
+dt_m4_test_pred <- predict(dt_m4, sub_test_d)
+(conf_matrix <- table(dt_m4_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+#create a model with boosting on categorical dataset
+dt_m5 <- C5.0(sub_train_d, sub_train_labels, trials = 10)
+dt_m5_test_pred <- predict(dt_m5, sub_test_d)
+(conf_matrix <- table(dt_m5_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+summary(dt_m5)
+```
+
+```{r}
+plot(dt_m5)
+```
+
+```{r}
+#create a model with boosting on categorical datas and pruning
+dt_m6 <- C5.0(sub_train_d, sub_train_labels, trials = 10, rules = TRUE)
+dt_m6_test_pred <- predict(dt_m6, sub_test_d)
+(conf_matrix <- table(dt_m6_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+summary(dt_m6)
+```
+
+
+####Test on Full Dataset
+```{r}
+#make a function to discretize a column
+discretize_data <- function(x) {
+  x <- cut(x, breaks = c(-Inf,0.3,0.6,Inf), labels = c("Dark","Medium", "Light"))
+}
+#apply function to all columns of sub_test and sub_train
+train_d <- as.data.frame(lapply(train[,2:ncol(train)], discretize_data))
+test_d <- as.data.frame(lapply(test[,1:ncol(test)], discretize_data))
+```
+
+```{r}
+#create a model with boosting on categorical dataset
+dt_model <- C5.0(train_d, full_train_labels, trials = 10)
+dt_model_test_pred <- predict(dt_model, test_d)
+```
+
+```{r}
+length(dt_model_test_pred)
+```
+
+```{r}
+#write predictions to csv
+write.csv(dt_model_test_pred, file = "DigitPredictions.csv")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
