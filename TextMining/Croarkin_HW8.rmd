@@ -1,0 +1,435 @@
+---
+title: "Croarkin_HW8"
+author: "Brandon Croarkin"
+date: "September 16, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(readtext)
+library(tibble)
+library(tidytext)
+library(tm)
+library(wordcloud)
+library(e1071)
+library(kernlab)
+library(caret)
+Sys.setenv(JAVA_HOME="C:\\Program Files\\Java\\jdk1.8.0_152\\jre")
+library(FSelector)
+```
+
+###Read in and Clean Data
+
+```{r}
+df <- data.frame(readLines('deception_data_converted_final.csv'))
+str(df)
+```
+
+```{r}
+#convert second column name
+colnames(df) <- c("FullText")
+#change second column to text type
+df$FullText <- as.character(df$FullText)
+summary(df)
+```
+
+```{r}
+#the first row is the column names
+cols <- unlist(strsplit(df$FullText[1], split = ","))
+#remove the row from dataframe
+df <- df[-1,]
+```
+
+```{r}
+#extract the lie column
+lie <- substr(df,1,1)
+#extract the sentiment
+sentiment <- substr(df,3,3)
+#extract the review
+review <- substr(df,5,100000)
+#combine into a dataframe
+df_clean <- data.frame(lie, sentiment, review)
+head(df_clean)
+```
+
+```{r}
+#convert review to character
+df_clean$review <- as.character(df_clean$review)
+summary(df_clean)
+```
+
+```{r}
+#remove rows 83 and 84 since they only contain a ?
+df_clean <- df_clean[-c(83,84),]
+View(df_clean)
+```
+
+```{r}
+#make and clean words corpus
+words.corpus <- VCorpus(VectorSource(df_clean$review))
+words.corpus <- tm_map(words.corpus, content_transformer(tolower))
+words.corpus <- tm_map(words.corpus, removePunctuation)
+words.corpus <- tm_map(words.corpus, removeNumbers)
+words.corpus <- tm_map(words.corpus, removeWords, stopwords("english"))
+words.corpus <- tm_map(words.corpus, stripWhitespace)
+```
+
+```{r}
+tdm <- DocumentTermMatrix(words.corpus)
+inspect(tdm)
+```
+
+```{r}
+set.seed(11)
+#pick random numbers using sample
+n <- round(tdm$nrow/5)
+s <- sample(1:tdm$nrow, n)
+## The test set is the sample
+test <- tdm[s,]
+inspect(test)
+```
+
+```{r}
+## The trainng set is the not sample
+train <- tdm[-s,]
+inspect(train)
+```
+
+```{r}
+#create training and test labels for lie detection using sample made
+lie_test_labels <- df_clean$lie[s]
+## The trainng set is the not sample
+lie_train_labels <- df_clean$lie[-s]
+```
+
+```{r}
+#need to make sure the train labels are close to a 50-50 split
+prop.table(table(lie_train_labels))
+```
+
+```{r}
+#create training and test labels for sentiment detection using sample made
+sent_test_labels <- df_clean$sentiment[s]
+## The trainng set is the not sample
+sent_train_labels <- df_clean$sentiment[-s]
+```
+
+```{r}
+#need to make sure the train labels are close to a 50-50 split
+prop.table(table(sent_train_labels))
+```
+
+```{r}
+#create an additional dataset that only tracks frequent words
+freq_word <- findFreqTerms(train, 5)
+#create train dataset with just frequent words
+train_freq <- train[,freq_word]
+#create test dataset with just frequent words
+test_freq <- test[,freq_word]
+```
+
+```{r}
+#for svm, want the data to be in a dataframe (use freq dataset)
+svm_lie_train <- data.frame(lie_train_labels, as.matrix(train_freq))
+svm_lie_test <- data.frame(as.matrix(test_freq))
+svm_sent_train <- data.frame(sent_train_labels, as.matrix(train_freq))
+svm_sent_test <- data.frame(as.matrix(test_freq))
+```
+
+```{r}
+#for naive bayes, want the data to be categorical
+
+#create a function to convert counts to a yes/no string
+convert_counts <- function(x) {
+  x <- ifelse(x > 0, "Yes", "No")
+}
+#apply to train dataset
+nm_train <- apply(train, 2, convert_counts)
+#apply to test dataset
+nm_test <- apply(test, 2, convert_counts)
+#apply to train_freq dataset
+nm_train_freq <- apply(train_freq, 2, convert_counts)
+#apply to train_freq dataset
+nm_test_freq <- apply(test_freq, 2, convert_counts)
+```
+
+```{r}
+#make a function to find percent correct from a confusion matrix
+findAccuracy <- function(x) {
+  correct <- sum(diag(x))
+  total <- sum(x)
+  perc_correct <- round(correct/total,4)
+  return(perc_correct * 100)
+}
+```
+
+###Data Visualization - Word Clouds
+
+```{r}
+#word cloud for whole dataset
+tdm <- TermDocumentMatrix(words.corpus)
+m <- as.matrix(tdm)
+wordCounts <- rowSums(m)
+wordCounts <- sort(wordCounts, decreasing = TRUE)
+cloud <- data.frame(word = names(wordCounts), freq = wordCounts)
+wordcloud(names(wordCounts), wordCounts, min.freq = 2, max.words = 70, rot.per = 0.35, colors = brewer.pal(8, "Dark2"), scale = c(3, .5), random.order = FALSE)
+```
+
+```{r}
+#word cloud for lies
+lies <- subset(df_clean, lie == "t")
+words.vec <- VectorSource(lies$review)
+words.corpus <- Corpus(words.vec)
+words.corpus <- tm_map(words.corpus, content_transformer(tolower))
+words.corpus <- tm_map(words.corpus, removePunctuation)
+words.corpus <- tm_map(words.corpus, removeNumbers)
+words.corpus <- tm_map(words.corpus, removeWords, stopwords("english"))
+tdm <- TermDocumentMatrix(words.corpus)
+m <- as.matrix(tdm)
+wordCounts <- rowSums(m)
+wordCounts <- sort(wordCounts, decreasing = TRUE)
+cloud <- data.frame(word = names(wordCounts), freq = wordCounts)
+wordcloud(names(wordCounts), wordCounts, min.freq = 2, max.words = 60, rot.per = 0.35, colors = brewer.pal(8, "Dark2"), scale = c(3, .5), random.order = FALSE)
+```
+
+```{r}
+#word cloud for not lies
+n_lies <- subset(df_clean, lie == "f")
+words.vec <- VectorSource(n_lies$review)
+words.corpus <- Corpus(words.vec)
+words.corpus <- tm_map(words.corpus, content_transformer(tolower))
+words.corpus <- tm_map(words.corpus, removePunctuation)
+words.corpus <- tm_map(words.corpus, removeNumbers)
+words.corpus <- tm_map(words.corpus, removeWords, stopwords("english"))
+tdm <- TermDocumentMatrix(words.corpus)
+m <- as.matrix(tdm)
+wordCounts <- rowSums(m)
+wordCounts <- sort(wordCounts, decreasing = TRUE)
+cloud <- data.frame(word = names(wordCounts), freq = wordCounts)
+wordcloud(names(wordCounts), wordCounts, min.freq = 2, max.words = 60, rot.per = 0.35, colors = brewer.pal(8, "Dark2"), scale = c(3, .5), random.order = FALSE)
+```
+
+```{r}
+#word cloud for positive sentiment
+pos <- subset(df_clean, sentiment == "p")
+words.vec <- VectorSource(pos$review)
+words.corpus <- Corpus(words.vec)
+words.corpus <- tm_map(words.corpus, content_transformer(tolower))
+words.corpus <- tm_map(words.corpus, removePunctuation)
+words.corpus <- tm_map(words.corpus, removeNumbers)
+words.corpus <- tm_map(words.corpus, removeWords, stopwords("english"))
+tdm <- TermDocumentMatrix(words.corpus)
+m <- as.matrix(tdm)
+wordCounts <- rowSums(m)
+wordCounts <- sort(wordCounts, decreasing = TRUE)
+cloud <- data.frame(word = names(wordCounts), freq = wordCounts)
+wordcloud(names(wordCounts), wordCounts, min.freq = 2, max.words = 60, rot.per = 0.35, colors = brewer.pal(8, "Dark2"), scale = c(3, .5), random.order = FALSE)
+```
+
+```{r}
+#word cloud for negative sentiment
+neg <- subset(df_clean, sentiment == "n")
+words.vec <- VectorSource(neg$review)
+words.corpus <- Corpus(words.vec)
+words.corpus <- tm_map(words.corpus, content_transformer(tolower))
+words.corpus <- tm_map(words.corpus, removePunctuation)
+words.corpus <- tm_map(words.corpus, removeNumbers)
+words.corpus <- tm_map(words.corpus, removeWords, stopwords("english"))
+tdm <- TermDocumentMatrix(words.corpus)
+m <- as.matrix(tdm)
+wordCounts <- rowSums(m)
+wordCounts <- sort(wordCounts, decreasing = TRUE)
+cloud <- data.frame(word = names(wordCounts), freq = wordCounts)
+wordcloud(names(wordCounts), wordCounts, min.freq = 2, max.words = 60, rot.per = 0.35, colors = brewer.pal(8, "Dark2"), scale = c(3, .5), random.order = FALSE)
+```
+
+###Naive Bayes
+
+####Lies
+```{r}
+#build model on train
+nm_lie1 <- naiveBayes(nm_train_freq, lie_train_labels) 
+```
+
+```{r}
+#make predictions
+nm_lie1_pred <- predict(nm_lie1, nm_test_freq)
+#make confusion matrix
+confusionMatrix(nm_lie1_pred, lie_test_labels)
+```
+
+```{r}
+#build model on train with laplace = 1
+nm_lie2 <- naiveBayes(nm_train_freq, lie_train_labels, laplace = 1)
+```
+
+```{r}
+#make predictions
+nm_lie2_pred <- predict(nm_lie2, nm_test_freq)
+#make confusion matrix
+confusionMatrix(nm_lie2_pred, lie_test_labels)
+```
+
+```{r}
+nm_train_df <- data.frame(lie_train_labels, as.matrix(nm_test_freq))
+#find most important features
+weights <- information.gain(lie_train_labels ~ ., data = nm_train_df)
+subset <- cutoff.k(weights, 20)
+f <- as.simple.formula(subset, "lie_train_labels")
+print(f)
+```
+
+####Sentiment 
+
+```{r}
+#build model on train
+nm_sent1 <- naiveBayes(nm_train_freq, sent_train_labels) 
+```
+
+```{r}
+#make predictions
+nm_sent1_pred <- predict(nm_sent1, nm_test_freq)
+#make confusion matrix
+confusionMatrix(nm_sent1_pred, sent_test_labels)
+```
+
+```{r}
+#build model on train
+nm_sent2 <- naiveBayes(nm_train_freq, sent_train_labels, laplace = 1) 
+```
+
+```{r}
+#make predictions
+nm_sent2_pred <- predict(nm_sent2, nm_test_freq)
+#make confusion matrix
+confusionMatrix(nm_sent2_pred, sent_test_labels)
+```
+
+```{r}
+nm_sent_train_df <- data.frame(sent_train_labels, as.matrix(nm_test_freq))
+#find most important features
+weights <- information.gain(sent_train_labels ~ ., data = nm_sent_train_df)
+subset <- cutoff.k(weights, 20)
+f <- as.simple.formula(subset, "sent_train_labels")
+print(f)
+```
+
+###SVMs
+
+####Lies
+```{r}
+#build model on train with linear kernel
+svm_lies1 <- ksvm(lie_train_labels ~ ., data = svm_lie_train, kernel = "vanilladot") 
+#make predictions
+svm_lies1_pred <- predict(svm_lies1, svm_lie_test)
+#make confusion matrix
+confusionMatrix(svm_lies1_pred, lie_test_labels)
+```
+
+```{r}
+#find most important features
+weights <- information.gain(lie_train_labels ~ ., data = svm_lie_train)
+subset <- cutoff.k(weights, 20)
+f <- as.simple.formula(subset, "lie_train_labels")
+print(f)
+```
+
+```{r}
+#build model on train with linear kernel
+svm_lies1.5 <- ksvm(lie_train_labels ~ ., data = svm_lie_train, kernel = "vanilladot", C = 5) 
+#make predictions
+svm_lies1.5_pred <- predict(svm_lies1.5, svm_lie_test)
+#make confusion matrix
+confusionMatrix(svm_lies1.5_pred, lie_test_labels)
+```
+
+```{r}
+#build model on train with radial kernel
+svm_lies2 <- ksvm(lie_train_labels ~ ., data = svm_lie_train, kernel = "rbfdot") 
+#make predictions
+svm_lies2_pred <- predict(svm_lies2, svm_lie_test)
+#make confusion matrix
+confusionMatrix(svm_lies2_pred, lie_test_labels)
+```
+
+```{r}
+#build model on train with polynomial kernel
+svm_lies3 <- ksvm(lie_train_labels ~ ., data = svm_lie_train, kernel = "polydot") 
+#make predictions
+svm_lies3_pred <- predict(svm_lies3, svm_lie_test)
+#make confusion matrix
+confusionMatrix(svm_lies3_pred, lie_test_labels)
+```
+
+```{r}
+#build model on train with polynomial kernel
+svm_lies3.5 <- ksvm(lie_train_labels ~ ., data = svm_lie_train, kernel = "polydot", C = 10) 
+#make predictions
+svm_lies3.5_pred <- predict(svm_lies3.5, svm_lie_test)
+#make confusion matrix
+confusionMatrix(svm_lies3.5_pred, lie_test_labels)
+```
+
+####Sentiment 
+
+```{r}
+#find most important features
+weights <- information.gain(sent_train_labels ~ ., data = svm_sent_train)
+subset <- cutoff.k(weights, 20)
+f <- as.simple.formula(subset, "sent_train_labels")
+print(f)
+```
+
+```{r}
+#build model on train with linear kernel
+svm_sent1 <- ksvm(sent_train_labels ~ ., data = svm_sent_train, kernel = "vanilladot") 
+#make predictions
+svm_sent1_pred <- predict(svm_sent1, svm_sent_test)
+#make confusion matrix
+confusionMatrix(svm_sent1_pred, sent_test_labels)
+```
+
+```{r}
+#build model on train with radial kernel
+svm_sent2 <- ksvm(sent_train_labels ~ ., data = svm_sent_train, kernel = "rbfdot") 
+#make predictions
+svm_sent2_pred <- predict(svm_sent2, svm_sent_test)
+#make confusion matrix
+confusionMatrix(svm_sent2_pred, sent_test_labels)
+```
+
+```{r}
+#build model on train with radial kernel
+svm_sent2.5 <- ksvm(sent_train_labels ~ ., data = svm_sent_train, kernel = "rbfdot", C = 5) 
+#make predictions
+svm_sent2.5_pred <- predict(svm_sent2.5, svm_sent_test)
+#make confusion matrix
+confusionMatrix(svm_sent2.5_pred, sent_test_labels)
+```
+
+```{r}
+#build model on train with radial kernel
+svm_sent2.10 <- ksvm(sent_train_labels ~ ., data = svm_sent_train, kernel = "rbfdot", C = 10) 
+#make predictions
+svm_sent2.10_pred <- predict(svm_sent2.10, svm_sent_test)
+#make confusion matrix
+confusionMatrix(svm_sent2.10_pred, sent_test_labels)
+```
+
+```{r}
+#build model on train with polynomial kernel
+svm_sent3 <- ksvm(sent_train_labels ~ ., data = svm_sent_train, kernel = "polydot") 
+#make predictions
+svm_sent3_pred <- predict(svm_sent3, svm_sent_test)
+#make confusion matrix
+confusionMatrix(svm_sent3_pred, sent_test_labels)
+```
+
+
+
