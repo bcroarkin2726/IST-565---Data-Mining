@@ -1,0 +1,356 @@
+---
+title: "HW6_NaiveBayes&DecisionTrees"
+author: "Brandon Croarkin"
+date: "September 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HW 7 - SVMs, kNN, and Random Forest for Digit Recognition
+
+```{r}
+library(e1071)
+library(caTools)
+library(klaR)
+library(caret)
+library(class)
+library(ElemStatLearn)
+library(kernlab)
+library(randomForest)
+set.seed(11)
+```
+
+###Read in Data and Basic EDA
+
+```{r}
+train <- read.csv('Kaggle-digit-train.csv')
+test <- read.csv('Kaggle-digit-test.csv')
+```
+
+```{r}
+head(train[1:5])
+```
+
+```{r}
+nrow(train)
+```
+
+###Data Preprocessing
+
+```{r}
+#need to convert label to a factor
+train$label <- factor(train$label)
+str(train[,1:4])
+```
+
+```{r}
+full_train_labels <- train[,1]
+```
+
+```{r}
+#make subset of data to make algorithms more reasonable for testing
+train_subset <- train[sample(nrow(train), 4000),]
+head(train_subset[1:10])
+```
+
+```{r}
+table(train_subset$label)
+```
+
+```{r}
+#get a summary of a random pixel in middle of picture
+summary(train_subset$pixel537)
+```
+
+```{r}
+###convert the pixel values to a 0-1 scale
+train_subset <- cbind(train_subset[1],train_subset[,2:ncol(train_subset)]/255.00)
+#get a summary of a random pixel in middle of picture
+summary(train_subset$pixel537)
+```
+
+```{r}
+#make a training and test set from the subset to test model
+sample <- sample.split(train_subset, SplitRatio = 0.9)
+sub_train <- subset(train_subset, sample == TRUE)
+sub_test <- subset(train_subset, sample == FALSE)
+```
+
+```{r}
+#extract the labels for testing
+train_labels <- train_subset[,1]
+sub_test_labels <- sub_test[,1]
+sub_train_labels <- sub_train[,1]
+#make datasets without the labels
+train_subset_nolab <- train_subset[,2:ncol(train_subset)]
+sub_train_nolab <- sub_train[,2:ncol(sub_train)]
+sub_test_nolab <- sub_test[,2:ncol(sub_test)]
+```
+
+```{r}
+#test for missing data
+any(is.na(sub_test))
+```
+
+```{r}
+#test for missing data
+any(is.na(sub_train))
+```
+
+```{r}
+#test for missing data
+any(is.na(train))
+```
+
+```{r}
+str(sub_train)
+```
+
+```{r}
+#make a function to find percent correct from a confusion matrix
+findAccuracy <- function(x) {
+  correct <- sum(diag(x))
+  total <- sum(x)
+  perc_correct <- round(correct/total,4)
+  return(perc_correct * 100)
+}
+```
+
+###kNN
+
+3 Nearest Neighbors
+```{r}
+knn3_test_pred <- knn(train = sub_train_nolab, sub_test_nolab, cl = sub_train_labels, k = 3)
+(conf_matrix <- table(knn3_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+5 Nearest Neighbors
+```{r}
+knn5_test_pred <- knn(train = sub_train_nolab, sub_test_nolab, cl = sub_train_labels, k = 5)
+(conf_matrix <- table(knn5_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+7 Nearest Neighbors
+```{r}
+knn7_test_pred <- knn(train = sub_train_nolab, sub_test_nolab, cl = sub_train_labels, k = 7)
+(conf_matrix <- table(knn7_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+9 Nearest Neighbors
+```{r}
+knn9_test_pred <- knn(train = sub_train_nolab, sub_test_nolab, cl = sub_train_labels, k = 9)
+(conf_matrix <- table(knn9_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+11 Nearest Neighbors
+```{r}
+knn11_test_pred <- knn(train = sub_train_nolab, sub_test_nolab, cl = sub_train_labels, k = 11)
+(conf_matrix <- table(knn11_test_pred, sub_test_labels))
+findAccuracy(conf_matrix)
+```
+
+```{r}
+knn_model1 <- train(label ~ ., data = sub_train, method = "knn",
+                   tuneGrid = data.frame(k = seq(1,10)),
+                   trControl = trainControl(method = "repeatedcv", 
+                                            number = 10, repeats = 3))
+
+summary(knn_model1)
+```
+
+```{r}
+plot(knn_model1)
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_knn <- predict(knn_model1, newdata = sub_test_nolab)
+confusionMatrix(predict_knn, sub_test_labels)
+```
+
+
+###SVM
+
+SVM Model 1 - Caret
+```{r}
+svm_linear_model1 <- train(label ~ ., data = sub_train, method = "svmLinear",
+                          trControl = trainControl(method = "boot",
+                                                   number = 10),
+                          tuneGrid = expand.grid(C = seq(0,1,0.05)))
+```
+
+```{r}
+predict_svm_linear1 <- predict(svm_linear_model1, newdata = sub_test_nolab)
+confusionMatrix(predict_svm_linear1, sub_test_labels)
+```
+
+SVM Model 2 - kernLab package - Linear kernel
+
+```{r}
+svm_model2 <- ksvm(label ~ ., data = sub_train, kernel = "vanilladot")
+svm_model2
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model2, newdata = sub_test)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+SVM Model 3 - kernLab package - Radial Basis
+
+```{r}
+svm_model3 <- ksvm(label ~ ., data = sub_train, kernel = "rbfdot")
+svm_model3
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model3, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+Radial is the best performing with default settings, so this is the best model to tune more. 
+```{r}
+svm_model3.5 <- ksvm(label ~ ., data = sub_train, type = "C-svc", kernel = "rbfdot", C = 5)
+svm_model3.5
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model3.5, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+```{r}
+svm_model3.10 <- ksvm(label ~ ., data = sub_train, kernel = "rbfdot", C = 10)
+svm_model3.10
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model3.10, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+```{r}
+svm_model3.20 <- ksvm(label ~ ., data = sub_train, kernel = "rbfdot", C = 20)
+svm_model3.20
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model3.20, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+SVM Model 4 - kernLab package - Polynomial
+
+```{r}
+svm_model4 <- ksvm(label ~ ., data = sub_train, kernel = "polydot")
+svm_model4
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model4, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+SVM Model 5 - kernLab package - Hyperbolic Tangent Sigmoid
+
+```{r}
+svm_model5 <- ksvm(label ~ ., data = sub_train, kernel = "tanhdot")
+svm_model5
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(svm_model2, newdata = sub_test_nolab)
+confusionMatrix(predict_svm, sub_test_labels)
+```
+
+###Random Forest
+
+Default model
+```{r}
+rf_model1 <- randomForest(label ~ ., data = sub_train)
+rf_model1 
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_rf <- predict(rf_model1, newdata = sub_test_nolab)
+confusionMatrix(predict_rf, sub_test_labels)
+```
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 3)
+grid_rf <- expand.grid(.mtry = c(2,4,8,16))
+rf_model2 <- train(label ~ ., data = sub_train, method = "rf", metric = "Kappa", trControl = ctrl, tuneGrid = grid_rf)
+rf_model2
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_rf <- predict(rf_model2, newdata = sub_test_nolab)
+confusionMatrix(predict_rf, sub_test_labels)
+```
+
+```{r}
+rf_model3 <- randomForest(label ~ ., data = sub_train, mtry = 16, ntree = 100)
+rf_model3 
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_rf <- predict(rf_model3, newdata = sub_test_nolab)
+confusionMatrix(predict_rf, sub_test_labels)
+```
+
+```{r}
+rf_model4 <- randomForest(label ~ ., data = sub_train, mtry = 16, ntree = 1000)
+rf_model4 
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_rf <- predict(rf_model4, newdata = sub_test_nolab)
+confusionMatrix(predict_rf, sub_test_labels)
+```
+
+###Train/Test on Full Test Dataset
+
+```{r}
+final_svm_model <- ksvm(label ~ ., data = train, type = "C-svc", kernel = "rbfdot", C = 5)
+final_svm_model
+```
+
+```{r}
+#Evaluate the performance of the model
+predict_svm <- predict(final_svm_model, newdata = test)
+```
+
+```{r}
+#write predictions to csv
+write.csv(predict_svm, file = "DigitPredictions(SVM).csv")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
