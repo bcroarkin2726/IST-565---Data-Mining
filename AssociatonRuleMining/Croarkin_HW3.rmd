@@ -1,0 +1,256 @@
+---
+title: "Croarkin_HW3"
+author: "Brandon Croarkin"
+date: "July 28, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HW 3 - Association Rules
+
+```{r}
+#load the libraries
+library(arules)
+library(arulesViz)
+library(ggplot2)
+```
+
+```{r}
+#read in data
+bank <- read.csv('bankdata_csv_all.csv')
+```
+
+```{r}
+head(bank)
+```
+
+```{r}
+str(bank)
+```
+
+```{r}
+summary(bank)
+```
+
+```{r}
+#explore the distribution of the continouse variable income
+ggplot(bank, aes(x=income)) + geom_histogram(color = "black", fill = "white", binwidth = 5000) + geom_vline(xintercept = median(bank$income), size = 1, color = "Blue") + ggtitle("Bank income histogram") + scale_x_continuous(breaks = c(10000,20000,30000,40000,50000,60000,70000)) 
+```
+
+```{r}
+#explore the distribution of the continouse variable income
+ggplot(bank, aes(x=age)) + geom_histogram(color = "black", fill = "white", bins = 10) + geom_vline(xintercept = median(bank$age), size = 1, color = "Blue") + ggtitle("Bank age histogram")
+```
+
+### Preprocessing
+
+```{r}
+#creating a function to find the na's for each column of a dataset
+findNAs <- function(df) {
+  for(i in names(df)) {
+    missingValues = sum(is.na(df[i]))
+    print(paste(i, "has" ,missingValues, "missing values."))
+  }
+}
+```
+
+```{r}
+findNAs(bank)
+```
+
+```{r}
+#Remove id variable
+bank$id<-NULL
+```
+
+####Discretization 
+
+```{r}
+#discretizing the income variable into 5 bins
+min_income <- min(bank$income)
+max_income <- max(bank$income)
+bins = 5 
+width=(max_income - min_income)/bins;
+bank$income = cut(bank$income, breaks=seq(min_income, max_income, width),labels=c("very low income","low income","average income","high income","very high income"))
+```
+
+```{r}
+#discretization of age by decades
+bank$age<-discretize(bank$age, method="fixed", breaks=c(10,20,30,40,50,60,70),labels=c("Teens","20s","30s","40s","50s","60s"))
+```
+
+```{r}
+summary(bank$age)
+```
+
+```{r}
+summary(bank$income)
+```
+
+```{r}
+#the minimum value for income became a NA value
+bank[is.na(bank$income),]
+```
+
+```{r}
+bank[65,4] <- "very low income"
+summary(bank$income)
+```
+
+```{r}
+#factor
+bank$children<-factor(bank$children)
+summary(bank$children)
+```
+
+### Association Rule Analysis
+
+```{r}
+#get the rules with default parameters
+rules1 <-apriori(bank)
+
+#sort rules by confidence
+rules1 <- sort(rules1, by="confidence", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules1[1:5])
+```
+
+```{r}
+summary(rules1)
+```
+
+```{r}
+#sort rules by lift
+rules1 <- sort(rules1, by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules1[1:5])
+```
+
+```{r}
+#inspect rules with max of 4 items
+rules2 <- apriori(bank, parameter = list(supp = 0.12, conf = 0.7,maxlen=4))
+inspect(rules2[1:5])
+
+#sort rules by confidence
+rules2 <- sort(rules2, by="confidence", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules2[1:8])
+```
+
+```{r}
+#sort rules by lift
+rules2 <- sort(rules2, by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules2[1:5])
+```
+
+```{r}
+#inspect rules with max of 3 items
+rules3 <- apriori(bank, parameter = list(supp = 0.12, conf = 0.7,maxlen=3))
+inspect(rules3[1:5])
+
+#sort rules by confidence
+rules3 <- sort(rules3, by="confidence", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules3[1:8])
+```
+
+```{r}
+#sort rules by lift
+rules3 <- sort(rules3, by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(rules3[1:5])
+```
+
+####PEP
+```{r}
+PEPrules <-apriori(data=bank, parameter=list(supp=0.1,conf = 0.07, maxlen = 3), 
+               appearance = list(default="lhs",rhs="pep=YES"),
+               control = list(verbose=F))
+
+#sort rules by lift
+PEPrules <- sort(PEPrules, by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(PEPrules[1:8])
+```
+
+```{r}
+noPEPrules <-apriori(data=bank, parameter=list(supp=0.1,conf = 0.07, maxlen = 3), 
+               appearance = list(default="lhs",rhs="pep=NO"),
+               control = list(verbose=F))
+
+#sort rules by lift
+noPEPrules <- sort(noPEPrules, by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(noPEPrules[1:8])
+```
+
+####Very High Income
+```{r}
+#by setting rhs to the very high income category we can look to see what factors lead to high income
+incomeRules <-apriori(data=bank, parameter=list(supp=0.02,conf = 0.07, maxlen = 2), 
+               appearance = list(default="lhs",rhs="income=very high income"),
+               control = list(verbose=F))
+
+#sort rules by lift
+incomeRules <- sort(incomeRules , by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(incomeRules[1:5])
+```
+
+```{r}
+#by setting rhs to the very high income category we can look to see what factors lead to high income
+incomeRules2 <-apriori(data=bank, parameter=list(supp=0.02,conf = 0.07, maxlen = 3), 
+               appearance = list(default="lhs",rhs="income=very high income"),
+               control = list(verbose=F))
+
+#sort rules by lift
+incomeRules2 <- sort(incomeRules2 , by="lift", decreasing = TRUE)
+
+#show the top 5 rules, but only 2 digits
+options(digits = 2)
+inspect(incomeRules2[1:5])
+```
+
+###Visualization
+
+```{r}
+plot(PEPrules)
+```
+
+```{r}
+plot(PEPrules[1:20], method = 'graph')
+```
+
+```{r}
+plot(incomeRules2)
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
