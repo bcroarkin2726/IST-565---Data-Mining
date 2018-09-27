@@ -1,1 +1,3 @@
+Text recognition using SVM models. 
 
+Data comes from Kaggle's Digit Recognizer dataset (https://www.kaggle.com/c/digit-recognizer).
