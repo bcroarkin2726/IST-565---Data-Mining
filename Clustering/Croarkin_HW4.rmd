@@ -1,0 +1,864 @@
+---
+title: "IST565_HW4"
+author: "Brandon Croarkin"
+date: "August 7, 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## HW 4: Use Clustering to Solve a Mystery in History
+
+In this homework assignment, you are going to use clustering methods to solve a mystery in history: who wrote the disputed essays, Hamilton or Madison?
+
+###Read in Data and Basic EDA
+
+```{r}
+library(cluster)
+library(wordcloud)
+library(ggplot2)
+library(ggfortify)
+library(dplyr)
+```
+
+```{r}
+fedPapers <- read.csv('fedPapers85.csv')
+head(fedPapers)
+```
+
+```{r}
+str(fedPapers)
+```
+
+```{r}
+summary(fedPapers)
+```
+
+```{r}
+table(fedPapers$author)
+```
+
+###Data Preparation
+
+```{r}
+#creating a function to find the na's for each column of a dataset
+findNAs <- function(df) {
+  for(i in names(df)) {
+    missingValues = sum(is.na(df[i]))
+    print(paste(i, "has" ,missingValues, "missing values."))
+  }
+}
+```
+
+```{r}
+findNAs(fedPapers)
+```
+
+```{r}
+#create a dataframe with just the attribute values
+dataNoLabels <- fedPapers[,c(3:ncol(fedPapers))]
+head(dataNoLabels)
+```
+
+```{r}
+#create a dataframe with just the papers from Hamilton, Madison, and the disputed essays
+fedPapersHMD <- fedPapers %>% filter(author == "Hamilton" | author == "Madison" | author == "dispt")
+table(fedPapersHMD$author)
+```
+
+```{r}
+#create a dataframe with just the attributes from the Hamilton, Madison, and disputed essays
+dataNoLabelsHMD <- fedPapersHMD[,c(3:ncol(fedPapers))]
+head(dataNoLabels)
+```
+
+###Processing 
+
+```{r}
+#make a function to find the most frequent response by group
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+```
+
+```{r}
+autoplot(prcomp(dataNoLabels), data = fedPapers, colour = 'author', size = 3, alpha = .6)
+```
+
+Plot a word cloud for the top ten words from each author. 
+```{r}
+#create vector of top 20 words
+disptWords <- fedPapers %>% filter(author == 'dispt') %>% select(-c("author", "filename")) %>% summarise_all(funs(mean))
+disptWords <- sort(disptWords, decreasing = TRUE)
+
+#convert to dataframe
+disptWords <- as.matrix(disptWords)
+d <- t(disptWords)
+colnames(d) <- c("freq")
+d <- data.frame(d)
+d <- add_rownames(d, "words")
+
+
+#create wordcloud
+wordcloud(words = d$words, freq = d$freq, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+#create vector of top 20 words
+disptWords <- fedPapers %>% filter(author == 'Hamilton') %>% select(-c("author", "filename")) %>% summarise_all(funs(mean))
+disptWords <- sort(disptWords, decreasing = TRUE)
+
+#convert to dataframe
+disptWords <- as.matrix(disptWords)
+d <- t(disptWords)
+colnames(d) <- c("freq")
+d <- data.frame(d)
+d <- add_rownames(d, "words")
+
+
+#create wordcloud
+wordcloud(words = d$words, freq = d$freq, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+#create vector of top 20 words
+disptWords <- fedPapers %>% filter(author == 'Madison') %>% select(-c("author", "filename")) %>% summarise_all(funs(mean))
+disptWords <- sort(disptWords, decreasing = TRUE)
+
+#convert to dataframe
+disptWords <- as.matrix(disptWords)
+d <- t(disptWords)
+colnames(d) <- c("freq")
+d <- data.frame(d)
+d <- add_rownames(d, "words")
+
+
+#create wordcloud
+wordcloud(words = d$words, freq = d$freq, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+#create vector of top 20 words
+disptWords <- fedPapers %>% filter(author == 'Jay') %>% select(-c("author", "filename")) %>% summarise_all(funs(mean))
+disptWords <- sort(disptWords, decreasing = TRUE)
+
+#convert to dataframe
+disptWords <- as.matrix(disptWords)
+d <- t(disptWords)
+colnames(d) <- c("freq")
+d <- data.frame(d)
+d <- add_rownames(d, "words")
+
+
+#create wordcloud
+wordcloud(words = d$words, freq = d$freq, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+```{r}
+#create vector of top 20 words
+disptWords <- fedPapers %>% filter(author == 'HM') %>% select(-c("author", "filename")) %>% summarise_all(funs(mean))
+disptWords <- sort(disptWords, decreasing = TRUE)
+
+#convert to dataframe
+disptWords <- as.matrix(disptWords)
+d <- t(disptWords)
+colnames(d) <- c("freq")
+d <- data.frame(d)
+d <- add_rownames(d, "words")
+
+
+#create wordcloud
+wordcloud(words = d$words, freq = d$freq, random.order = FALSE, colors = brewer.pal(8, "Dark2"))
+```
+
+####k-Means (full data) - Trial One
+
+```{r}
+set.seed(11)
+
+#choose a k equal to the number of distinct writers
+k = 4
+
+#run kmeanModel
+(kmeansModel1 <- kmeans(dataNoLabels, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel1$size
+```
+
+```{r}
+#print the centroids
+kmeansModel1$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups1 <- data.frame(fedPapers,kmeansModel1$cluster)
+
+#View cluster assignments
+View(clusterGroups1[,c(1,ncol(clusterGroups1))])
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups1 %>% select(author, kmeansModel1.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel1.cluster))
+
+mytable <-table(df$author,df$kmeansModel1.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+set.seed(11)
+autoplot(kmeans(dataNoLabels, 4), data = clusterGroups1, colour = 'kmeansModel1.cluster', shape = 'author')
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabels, kmeansModel1$cluster, color = T, shade = T, labels = 4, lines = 0)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups1, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel1.cluster)))
+```
+
+####k-Means (full data) - Trial Two
+
+```{r}
+set.seed(1)
+
+#choose a k equal to the number of distinct writers
+k = 4
+
+#run kmeanModel
+(kmeansModel2 <- kmeans(dataNoLabels, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel2$size
+```
+
+```{r}
+#print the centroids
+kmeansModel2$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups2 <- data.frame(fedPapers,kmeansModel2$cluster)
+
+#View cluster assignments
+View(clusterGroups2[,c(1,ncol(clusterGroups2))])
+```
+
+```{r}
+set.seed(1)
+autoplot(kmeans(dataNoLabels, 4), data = dataNoLabels)
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups2 %>% select(author, kmeansModel2.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel2.cluster))
+
+mytable <-table(df$author,df$kmeansModel2.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+set.seed(11)
+autoplot(kmeans(dataNoLabels, 4), data = clusterGroups2, colour = 'kmeansModel2.cluster', shape = 'author')
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabels, kmeansModel2$cluster, color = T, shade = T, labels = 4, lines = 0)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups2, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel2.cluster)))
+```
+
+####k-Means (full data) - Trial Three
+
+```{r}
+set.seed(65)
+
+#choose a k equal to the number of distinct writers
+k = 4
+
+#run kmeanModel
+(kmeansModel3 <- kmeans(dataNoLabels, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel3$size
+```
+
+```{r}
+#print the centroids
+kmeansModel3$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups3 <- data.frame(fedPapers,kmeansModel3$cluster)
+
+#View cluster assignments
+View(clusterGroups3[,c(1,ncol(clusterGroups3))])
+```
+
+```{r}
+set.seed(65)
+autoplot(kmeans(dataNoLabels, 4), data = dataNoLabels)
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups3 %>% select(author, kmeansModel3.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel3.cluster))
+
+mytable <-table(df$author,df$kmeansModel3.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+set.seed(11)
+autoplot(kmeans(dataNoLabels, 4), data = clusterGroups3, colour = 'kmeansModel3.cluster', shape = 'author')
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabels, kmeansModel3$cluster, color = T, shade = T, labels = 4, lines = 0)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups3, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel3.cluster)))
+```
+
+####k-Means (subset data) - Trial Four
+
+```{r}
+set.seed(11)
+
+#choose a k equal to the number of distinct writers
+k = 2
+
+#run kmeanModel
+(kmeansModel4 <- kmeans(dataNoLabelsHMD, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel4$size
+```
+
+```{r}
+#print the centroids
+kmeansModel4$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups4 <- data.frame(fedPapersHMD,kmeansModel4$cluster)
+
+#View cluster assignments
+View(clusterGroups4[,c(1,ncol(clusterGroups4))])
+```
+
+```{r}
+set.seed(11)
+autoplot(kmeans(dataNoLabelsHMD, 2), data = dataNoLabelsHMD)
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups4 %>% select(author, kmeansModel4.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel4.cluster))
+
+mytable <-table(df$author,df$kmeansModel4.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabelsHMD, kmeansModel4$cluster, color = T, shade = T, labels = 2, lines = 0)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups4, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel4.cluster)))
+```
+
+####k-Means (subset data) - Trial Five
+
+```{r}
+set.seed(1)
+
+#choose a k equal to the number of distinct writers
+k = 2
+
+#run kmeanModel
+(kmeansModel5 <- kmeans(dataNoLabelsHMD, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel5$size
+```
+
+```{r}
+#print the centroids
+kmeansModel5$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups5 <- data.frame(fedPapersHMD,kmeansModel5$cluster)
+
+#View cluster assignments
+View(clusterGroups5[,c(1,ncol(clusterGroups5))])
+```
+
+```{r}
+set.seed(1)
+autoplot(kmeans(dataNoLabelsHMD, 2), data = dataNoLabelsHMD)
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabelsHMD, kmeansModel5$cluster, color = T, shade = T, labels = 2, lines = 0)
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups5 %>% select(author, kmeansModel5.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel5.cluster))
+
+mytable <-table(df$author,df$kmeansModel5.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups5, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel5.cluster)))
+```
+
+####k-Means (subset data) - Trial Six
+
+```{r}
+set.seed(65)
+
+#choose a k equal to the number of distinct writers
+k = 2
+
+#run kmeanModel
+(kmeansModel6 <- kmeans(dataNoLabelsHMD, k))
+```
+
+```{r}
+#find cluster sizes
+kmeansModel6$size
+```
+
+```{r}
+#print the centroids
+kmeansModel6$centers
+```
+
+```{r}
+##Get the clusters that were assigned to each group
+clusterGroups6 <- data.frame(fedPapersHMD,kmeansModel6$cluster)
+
+#View cluster assignments
+View(clusterGroups6[,c(1,ncol(clusterGroups6))])
+```
+
+```{r}
+set.seed(65)
+autoplot(kmeans(dataNoLabelsHMD, 2), data = dataNoLabelsHMD)
+```
+
+```{r}
+#use PCA in visualization package "cluster" to visuzalize kMeans model
+clusplot(dataNoLabelsHMD, kmeansModel6$cluster, color = T, shade = T, labels = 2, lines = 0)
+```
+
+```{r}
+#find what author each cluster appears to represent by finding the most common cluster label
+df <- clusterGroups6 %>% select(author, kmeansModel6.cluster) %>% group_by(author) %>% mutate(clusterAuthor = Mode(kmeansModel6.cluster))
+
+mytable <-table(df$author,df$kmeansModel6.cluster)
+round(prop.table(mytable,1),2)
+```
+
+```{r}
+##plot the clusters
+ggplot(data = clusterGroups6, aes(author)) + geom_bar(aes(fill = as.factor(kmeansModel6.cluster)))
+```
+
+```{r}
+centers <- clusterGroups6 %>% select(-c(author, filename)) %>% group_by(kmeansModel6.cluster) %>% summarize_all(funs(mean))
+centers <- t(centers)
+colnames(centers) <- c("Cluster1", "Cluster2")
+centers <- centers[-1,]
+centers <- round(centers, 3)
+centers <- data.frame(centers)
+centers$diff <- abs(centers$Cluster1 - centers$Cluster2)
+centers <- add_rownames(centers, "FunctionWord")
+centers <- centers %>% arrange(desc(diff)) %>% top_n(20)
+centers
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+#####HAC
+
+#####Full Dataset
+
+######Creating Distance Measures
+
+First step involves making different distance measures. 
+```{r}
+distMatrix_E <- dist(dataNoLabels, method="euclidean") 
+```
+
+```{r}
+distMatrix_M <- dist(dataNoLabels, method="manhattan")
+```
+
+```{r}
+distMatrix_C <- dist(dataNoLabels, method="canberra")
+```
+
+Then we create the hierarchical clusters.
+
+######Euclidean Distance
+
+#######Complete Linkage
+```{r}
+hc_e <- hclust(distMatrix_E, method = "complete")
+plot(hc_e)
+```
+
+```{r}
+clust_e <- cutree(hc_e, k=4)
+with(fedPapers, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapers$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_e2 <- hclust(distMatrix_E, method = "average")
+plot(hc_e2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_e2, k=4)
+with(fedPapers, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapers$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_e3 <- hclust(distMatrix_E, method = "single")
+plot(hc_e3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_e3, k=4)
+with(fedPapers, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapers$author)
+```
+
+######Manhattan Distance
+
+#######Complete Linkage
+```{r}
+hc_m <- hclust(distMatrix_M, method = "complete")
+plot(hc_m)
+```
+
+```{r}
+clust_e <- cutree(hc_m, k=4)
+with(fedPapers, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapers$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_m2 <- hclust(distMatrix_M, method = "average")
+plot(hc_m2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_m2, k=4)
+with(fedPapers, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapers$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_m3 <- hclust(distMatrix_M, method = "single")
+plot(hc_m3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_m3, k=4)
+with(fedPapers, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapers$author)
+```
+
+######Canberra Distance
+
+#######Complete Linkage
+```{r}
+hc_c <- hclust(distMatrix_C, method = "complete")
+plot(hc_c)
+```
+
+```{r}
+clust_e <- cutree(hc_c, k=4)
+with(fedPapers, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapers$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_c2 <- hclust(distMatrix_C, method = "average")
+plot(hc_c2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_c2, k=4)
+with(fedPapers, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapers$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_c3 <- hclust(distMatrix_C, method = "single")
+plot(hc_c3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_c3, k=4)
+with(fedPapers, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapers$author)
+```
+
+#####Hamilton and Madison Subset
+
+######Creating Distance Measures
+
+First step involves making different distance measures. 
+```{r}
+distMatrix_E2 <- dist(dataNoLabelsHMD, method="euclidean")
+```
+
+```{r}
+distMatrix_M2 <- dist(dataNoLabelsHMD, method="manhattan")
+```
+
+```{r}
+distMatrix_C2 <- dist(dataNoLabelsHMD, method="canberra")
+```
+
+Then we create the hierarchical clusters.
+
+######Euclidean Distance
+
+#######Complete Linkage
+```{r}
+hc_e <- hclust(distMatrix_E2, method = "complete")
+plot(hc_e)
+```
+
+```{r}
+clust_e <- cutree(hc_e, k=2)
+with(fedPapersHMD, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapersHMD$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_e2 <- hclust(distMatrix_E2, method = "average")
+plot(hc_e2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_e2, k=2)
+with(fedPapersHMD, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapersHMD$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_e3 <- hclust(distMatrix_E2, method = "single")
+plot(hc_e3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_e3, k=2)
+with(fedPapersHMD, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapersHMD$author)
+```
+
+######Manhattan Distance
+
+#######Complete Linkage
+```{r}
+hc_m <- hclust(distMatrix_M2, method = "complete")
+plot(hc_m)
+```
+
+```{r}
+clust_e <- cutree(hc_m, k=2)
+with(fedPapersHMD, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapersHMD$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_m2 <- hclust(distMatrix_M2, method = "average")
+plot(hc_m2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_m2, k=2)
+with(fedPapersHMD, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapersHMD$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_m3 <- hclust(distMatrix_M2, method = "single")
+plot(hc_m3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_m3, k=2)
+with(fedPapersHMD, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapersHMD$author)
+```
+
+######Canberra Distance
+
+#######Complete Linkage
+```{r}
+hc_c <- hclust(distMatrix_C2, method = "complete")
+plot(hc_c)
+```
+
+```{r}
+clust_e <- cutree(hc_c, k=2)
+with(fedPapersHMD, tapply(clust_e, list(author), mean))
+```
+
+```{r}
+table(clust_e, fedPapersHMD$author)
+```
+
+#######Average Linkage
+
+```{r}
+hc_c2 <- hclust(distMatrix_C2, method = "average")
+plot(hc_c2)
+```
+
+```{r}
+clust_e2 <- cutree(hc_c2, k=2)
+with(fedPapersHMD, tapply(clust_e2, list(author), mean))
+```
+
+```{r}
+table(clust_e2, fedPapersHMD$author)
+```
+
+#######Single Linkage
+
+```{r}
+hc_c3 <- hclust(distMatrix_C2, method = "single")
+plot(hc_c3)
+```
+
+```{r}
+clust_e3 <- cutree(hc_c3, k=2)
+with(fedPapersHMD, tapply(clust_e3, list(author), mean))
+```
+
+```{r}
+table(clust_e3, fedPapersHMD$author)
+```
+
+
+
+
